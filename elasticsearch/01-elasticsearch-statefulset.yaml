@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: logging
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      initContainers:
+      - name: create-certs
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+        command:
+        - bash
+        - -c
+        - |
+          #!/bin/bash
+          set -ex
+          
+          mkdir -p /usr/share/elasticsearch/config/certs
+
+          rm -f /usr/share/elasticsearch/config/certs/elastic-stack-ca.p12
+          rm -f /usr/share/elasticsearch/config/certs/elastic-certificates.p12
+          
+          echo "Generating self-signed certificates..."
+          
+          echo "y" | /usr/share/elasticsearch/bin/elasticsearch-certutil ca --silent --out /usr/share/elasticsearch/config/certs/elastic-stack-ca.p12 --pass ""
+          
+          echo "y" | /usr/share/elasticsearch/bin/elasticsearch-certutil cert --silent --ca /usr/share/elasticsearch/config/certs/elastic-stack-ca.p12 \
+            --ca-pass "" --out /usr/share/elasticsearch/config/certs/elastic-certificates.p12 --pass ""
+          
+          echo "Self-signed certificates generated."
+        volumeMounts:
+        - name: certs-volume
+          mountPath: /usr/share/elasticsearch/config/certs
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+        resources:
+          limits:
+            memory: 2Gi
+            cpu: 1
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: transport
+        volumeMounts:
+        - name: elasticsearch-storage
+          mountPath: /usr/share/elasticsearch/data
+        - name: certs-volume
+          mountPath: /usr/share/elasticsearch/config/certs
+        env:
+        - name: ELASTIC_PASSWORD
+          value: "password"
+        - name: discovery.type
+          value: single-node
+        - name: xpack.security.enabled
+          value: "true"
+        - name: xpack.security.http.ssl.enabled
+          value: "true"
+        - name: xpack.security.http.ssl.keystore.path
+          value: "/usr/share/elasticsearch/config/certs/elastic-certificates.p12"
+        - name: xpack.security.http.ssl.truststore.path
+          value: "/usr/share/elasticsearch/config/certs/elastic-certificates.p12"
+        - name: xpack.security.transport.ssl.enabled
+          value: "true" 
+        - name: xpack.security.transport.ssl.verification_mode
+          value: "certificate"
+        - name: xpack.security.transport.ssl.keystore.path 
+          value: "/usr/share/elasticsearch/config/certs/elastic-certificates.p12"
+        - name: xpack.security.transport.ssl.truststore.path
+          value: "/usr/share/elasticsearch/config/certs/elastic-certificates.p12"
+      volumes:
+      - name: certs-volume
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: elasticsearch-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 5Gi

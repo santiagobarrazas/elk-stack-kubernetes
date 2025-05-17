@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.5.0
+        ports:
+        - containerPort: 5601
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "https://elasticsearch.logging.svc.cluster.local:9200"
+        - name: ELASTICSEARCH_USERNAME
+          value: "kibana_system_user"
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: kibana-credentials
+              key: password
+        - name: ELASTICSEARCH_SSL_VERIFICATIONMODE
+          value: "none"
+        - name: SERVER_HOST
+          value: "0.0.0.0"

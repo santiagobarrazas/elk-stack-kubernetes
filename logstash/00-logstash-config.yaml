@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline-config
+  namespace: logging
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+    filter {
+      # Puedes añadir filtros aquí (grok, mutate, etc)
+    }
+    output {
+      elasticsearch {
+        hosts => ["https://elasticsearch.logging.svc.cluster.local:9200"]
+        user => "${ELASTIC_USERNAME}"
+        password => "${ELASTIC_PASSWORD}"
+        index => "logs-%{+YYYY.MM.dd}"
+      }
+    }

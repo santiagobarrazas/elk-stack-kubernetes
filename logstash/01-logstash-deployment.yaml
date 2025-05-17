@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.5.0
+        ports:
+        - containerPort: 5044
+        env:
+        - name: ELASTIC_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: elastic-credentials
+              key: username
+        - name: ELASTIC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elastic-credentials
+              key: password
+        volumeMounts:
+        - name: pipeline-config
+          mountPath: /usr/share/logstash/pipeline/
+      volumes:
+      - name: pipeline-config
+        configMap:
+          name: logstash-pipeline-config
