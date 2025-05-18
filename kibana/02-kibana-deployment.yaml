@@ -17,6 +17,22 @@ spec:
       - name: elasticsearch-ca
         secret:
           secretName: elasticsearch-ca
+      initContainers:
+      - name: wait-for-kibana-credentials
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for secret/kibana-credentials to be created..."
+          until [ -f "/etc/kibana-secrets/password" ]; do
+            echo "Secret 'kibana-credentials' not yet available, or 'password' key missing. Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Secret 'kibana-credentials' with 'password' key found. Proceeding with Kibana startup."
+        volumeMounts:
+        - name: kibana-credentials-volume
+          mountPath: /etc/kibana-secrets
+          readOnly: true
       containers:
       - name: kibana
         image: docker.elastic.co/kibana/kibana:8.5.0
@@ -32,7 +48,7 @@ spec:
         - name: ELASTICSEARCH_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: kibana-credentials # Creado por el Job
+              name: kibana-credentials
               key: password
         - name: ELASTICSEARCH_SSL_VERIFICATIONMODE
           value: "full"
@@ -42,3 +58,14 @@ spec:
         - name: elasticsearch-ca
           mountPath: /usr/share/kibana/config/certs
           readOnly: true
+        - name: kibana-credentials-volume
+          mountPath: /etc/kib-secrets
+          readOnly: true
+      volumes:
+      - name: elasticsearch-ca
+        secret:
+          secretName: elasticsearch-ca
+      - name: kibana-credentials-volume
+        secret:
+          secretName: kibana-credentials
+          optional: false
