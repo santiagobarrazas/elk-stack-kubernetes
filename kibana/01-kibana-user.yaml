@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-kibana-user
+  namespace: logging
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      serviceAccountName: create-kibana-user-sa
+      restartPolicy: OnFailure
+      volumes:
+      - name: elasticsearch-ca
+        secret:
+          secretName: elasticsearch-ca
+      containers:
+      - name: create-user
+        image: curlimages/curl:8.5.0
+        env:
+        - name: ELASTIC_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: elastic-credentials
+              key: username
+        - name: ELASTIC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elastic-credentials
+              key: password
+        - name: KIBANA_USER
+          value: "kibana_system_user"
+        - name: KIBANA_PASSWORD
+          value: "kibanapass123"
+        volumeMounts:
+        - name: elasticsearch-ca
+          mountPath: /certs
+          readOnly: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          ES_URL="https://elasticsearch.logging.svc.cluster.local:9200"
+          K8S_API_URL="https://kubernetes.default.svc"
+          NAMESPACE="logging"
+          CACERT_PATH="/certs/ca.crt"
+          K8S_TOKEN_PATH="/var/run/secrets/kubernetes.io/serviceaccount/token"
+          K8S_API_CACERT_PATH="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+          until curl --cacert "$CACERT_PATH" -u "$ELASTIC_USERNAME:$ELASTIC_PASSWORD" "$ES_URL/_cluster/health?wait_for_status=yellow&timeout=5s"; do
+            echo "Waiting for Elasticsearch..."
+            sleep 5
+          done
+          echo "Elasticsearch is ready."
+
+          curl_exit_code=0
+          curl --cacert "$CACERT_PATH" -u "$ELASTIC_USERNAME:$ELASTIC_PASSWORD" -X POST \
+            "$ES_URL/_security/user/$KIBANA_USER" \
+            -H 'Content-Type: application/json' -d "{
+              \"password\" : \"$KIBANA_PASSWORD\",
+              \"roles\" : [ \"kibana_system\" ],
+              \"full_name\" : \"Kibana System User for service operations\"
+            }" || curl_exit_code=$?
+          
+          if [ $curl_exit_code -ne 0 ] && [ $curl_exit_code -ne 7 ]; then
+            echo "User creation command finished with code $curl_exit_code. Assuming user might already exist or other non-critical issue."
+          else
+            echo "Kibana user creation attempt finished."
+          fi
+
+          KIBANA_PASSWORD_B64=$(echo -n "$KIBANA_PASSWORD" | base64 -w0)
+          curl --cacert "$K8S_API_CACERT_PATH" --fail -X PUT \
+            -H "Authorization: Bearer $(cat $K8S_TOKEN_PATH)" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"apiVersion\": \"v1\",
+              \"kind\": \"Secret\",
+              \"metadata\": {
+                \"name\": \"kibana-credentials\",
+                \"namespace\": \"$NAMESPACE\"
+              },
+              \"data\": {
+                \"password\": \"$KIBANA_PASSWORD_B64\"
+              },
+              \"type\": \"Opaque\"
+            }" "$K8S_API_URL/api/v1/namespaces/$NAMESPACE/secrets/kibana-credentials"
+          echo "Kibana credentials secret ensured."

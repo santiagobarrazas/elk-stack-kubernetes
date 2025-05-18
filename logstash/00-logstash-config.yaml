@@ -11,7 +11,36 @@ data:
       }
     }
     filter {
-      # Puedes añadir filtros aquí (grok, mutate, etc)
+      if [kubernetes] {
+        mutate {
+          add_field => { "namespace" => "%{[kubernetes][namespace]}" }
+          add_field => { "pod_name" => "%{[kubernetes][pod][name]}" }
+          add_field => { "container_name" => "%{[kubernetes][container][name]}" }
+        }
+      }
+
+      if [message] {
+        json {
+          source => "message"
+          target => "parsed_json" # El JSON parseado irá aquí
+          skip_on_invalid_json => true
+        }
+      }
+
+      ruby {
+        code => "
+          if event.get('[kubernetes][labels][app]')
+            event.set('app', event.get('[kubernetes][labels][app]'))
+          elsif event.get('[kubernetes][pod][name]')
+            parts = event.get('[kubernetes][pod][name]').split('-')
+            if parts.length > 2 # Necesitamos al menos 3 partes para quitar las últimas 2
+              event.set('app', parts[0..-3].join('-')) rescue nil
+            elsif parts.length > 0
+              event.set('app', parts[0]) rescue nil # Si solo hay una parte, usarla
+            end
+          end
+        "
+      }
     }
     output {
       elasticsearch {
@@ -19,5 +48,7 @@ data:
         user => "${ELASTIC_USERNAME}"
         password => "${ELASTIC_PASSWORD}"
         index => "logs-%{+YYYY.MM.dd}"
+        ssl => true
+        cacert => "/usr/share/logstash/config/certs/ca.crt"
       }
     }

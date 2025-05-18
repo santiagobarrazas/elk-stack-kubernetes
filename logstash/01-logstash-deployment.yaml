@@ -32,7 +32,13 @@ spec:
         volumeMounts:
         - name: pipeline-config
           mountPath: /usr/share/logstash/pipeline/
+        - name: elasticsearch-ca
+          mountPath: /usr/share/logstash/config/certs
+          readOnly: true
       volumes:
       - name: pipeline-config
         configMap:
           name: logstash-pipeline-config
+      - name: elasticsearch-ca
+        secret:
+          secretName: elasticsearch-ca

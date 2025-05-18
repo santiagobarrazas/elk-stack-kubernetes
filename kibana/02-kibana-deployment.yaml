@@ -13,12 +13,18 @@ spec:
       labels:
         app: kibana
     spec:
+      volumes:
+      - name: elasticsearch-ca
+        secret:
+          secretName: elasticsearch-ca
       containers:
       - name: kibana
         image: docker.elastic.co/kibana/kibana:8.5.0
         ports:
         - containerPort: 5601
         env:
+        - name: SERVER_HOST
+          value: "0.0.0.0"
         - name: ELASTICSEARCH_HOSTS
           value: "https://elasticsearch.logging.svc.cluster.local:9200"
         - name: ELASTICSEARCH_USERNAME
@@ -26,9 +32,13 @@ spec:
         - name: ELASTICSEARCH_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: kibana-credentials
+              name: kibana-credentials # Creado por el Job
               key: password
         - name: ELASTICSEARCH_SSL_VERIFICATIONMODE
-          value: "none"
-        - name: SERVER_HOST
-          value: "0.0.0.0"
+          value: "full"
+        - name: ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES
+          value: "/usr/share/kibana/config/certs/ca.crt"
+        volumeMounts:
+        - name: elasticsearch-ca
+          mountPath: /usr/share/kibana/config/certs
+          readOnly: true
